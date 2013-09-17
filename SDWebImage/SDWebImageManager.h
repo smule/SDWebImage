@@ -24,6 +24,9 @@ typedef enum
     SDWebImageCircleImageToCache = 1 << 4
 } SDWebImageOptions;
 
+// added by smule
+extern NSString *const kMaxImageSizeForCacheKey;
+
 #if NS_BLOCKS_AVAILABLE
 typedef void(^SDWebImageSuccessBlock)(UIImage *image, BOOL cached);
 typedef void(^SDWebImageFailureBlock)(NSError *error);

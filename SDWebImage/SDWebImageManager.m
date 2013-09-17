@@ -16,6 +16,8 @@ static SDWebImageManager *instance;
 // added by smule
 static NSString *kCircleCacheKeyAddition = @"-circle";
 
+NSString *const kMaxImageSizeForCacheKey = @"kMaxImageSizeForCacheKey";
+
 @implementation SDWebImageManager
 
 #if NS_BLOCKS_AVAILABLE
@@ -56,7 +58,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     {
         instance = [[SDWebImageManager alloc] init];
     }
-
+    
     return instance;
 }
 
@@ -74,6 +76,23 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
 #else
     return [url absoluteString];
 #endif
+}
+
+- (NSString*)cacheKeyForURL:(NSURL*)url withOptions:(SDWebImageOptions)options userInfo:(NSDictionary*)userInfo
+{
+    // added by smule
+    NSString *cacheKey = [self cacheKeyForURL:url];
+    // append a different cache key if we're drawing a circle
+    if ((options & SDWebImageCircleImageToCache))
+    {
+        cacheKey = [cacheKey stringByAppendingString:kCircleCacheKeyAddition];
+    }
+    NSString *newSize = [userInfo objectForKey:kMaxImageSizeForCacheKey];
+    if ( newSize )
+    {
+        cacheKey = [cacheKey stringByAppendingString:newSize];
+    }
+    return cacheKey;
 }
 
 /*
@@ -125,22 +144,25 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     {
         url = nil; // Prevent some common crashes due to common wrong values passed like NSNull.null for instance
     }
-
+    
     if (!url || !delegate || (!(options & SDWebImageRetryFailed) && [failedURLs containsObject:url]))
     {
         return;
     }
-
+    
     // Check the on-disk cache async so we don't block the main thread
     [cacheDelegates addObject:delegate];
     [cacheURLs addObject:url];
+    
+    NSString *cacheKey = [self cacheKeyForURL:url withOptions:options userInfo:userInfo];
+    
     NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys:
                           delegate, @"delegate",
                           url, @"url",
                           [NSNumber numberWithInt:options], @"options",
                           userInfo ? userInfo : [NSNull null], @"userInfo",
                           nil];
-    [[SDImageCache sharedImageCache] queryDiskCacheForKey:[self cacheKeyForURL:url] delegate:self userInfo:info];
+    [[SDImageCache sharedImageCache] queryDiskCacheForKey:cacheKey delegate:self userInfo:info];
 }
 
 #if NS_BLOCKS_AVAILABLE
@@ -181,13 +203,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     SDWIRelease(successCopy);
     SDWIRelease(failureCopy);
     
-    // added by smule
-    NSString *cacheKey = [self cacheKeyForURL:url];
-    // append a different cache key if we're drawing a circle
-    if ((options & SDWebImageCircleImageToCache))
-    {
-        cacheKey = [cacheKey stringByAppendingString:kCircleCacheKeyAddition];
-    }
+    NSString *cacheKey = [self cacheKeyForURL:url withOptions:options userInfo:userInfo];
     
     [[SDImageCache sharedImageCache] queryDiskCacheForKey:cacheKey delegate:self userInfo:info];
 }
@@ -201,22 +217,22 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
         [cacheDelegates removeObjectAtIndex:idx];
         [cacheURLs removeObjectAtIndex:idx];
     }
-
+    
     while ((idx = [downloadDelegates indexOfObjectIdenticalTo:delegate]) != NSNotFound)
     {
         SDWebImageDownloader *downloader = SDWIReturnRetained([downloaders objectAtIndex:idx]);
-
+        
         [downloadInfo removeObjectAtIndex:idx];
         [downloadDelegates removeObjectAtIndex:idx];
         [downloaders removeObjectAtIndex:idx];
-
+        
         if (![downloaders containsObject:downloader])
         {
             // No more delegate are waiting for this download, cancel it
             [downloader cancel];
             [downloaderForURL removeObjectForKey:downloader.url];
         }
-
+        
         SDWIRelease(downloader);
     }
 }
@@ -229,7 +245,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     }
     [cacheDelegates removeAllObjects];
     [cacheURLs removeAllObjects];
-
+    
     [downloadInfo removeAllObjects];
     [downloadDelegates removeAllObjects];
     [downloaders removeAllObjects];
@@ -256,14 +272,14 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
 {
     NSURL *url = [info objectForKey:@"url"];
     id<SDWebImageManagerDelegate> delegate = [info objectForKey:@"delegate"];
-
+    
     NSUInteger idx = [self indexOfDelegate:delegate waitingForURL:url];
     if (idx == NSNotFound)
     {
         // Request has since been canceled
         return;
     }
-
+    
     if ([delegate respondsToSelector:@selector(webImageManager:didFinishWithImage:)])
     {
         [delegate performSelector:@selector(webImageManager:didFinishWithImage:) withObject:self withObject:image];
@@ -288,7 +304,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
         success(image, YES);
     }
 #endif
-
+    
     [cacheDelegates removeObjectAtIndex:idx];
     [cacheURLs removeObjectAtIndex:idx];
 }
@@ -298,20 +314,20 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     NSURL *url = [info objectForKey:@"url"];
     id<SDWebImageManagerDelegate> delegate = [info objectForKey:@"delegate"];
     SDWebImageOptions options = [[info objectForKey:@"options"] intValue];
-
+    
     NSUInteger idx = [self indexOfDelegate:delegate waitingForURL:url];
     if (idx == NSNotFound)
     {
         // Request has since been canceled
         return;
     }
-
+    
     [cacheDelegates removeObjectAtIndex:idx];
     [cacheURLs removeObjectAtIndex:idx];
-
+    
     // Share the same downloader for identical URLs so we don't download the same URL several times
     SDWebImageDownloader *downloader = [downloaderForURL objectForKey:url];
-
+    
     if (!downloader)
     {
         downloader = [SDWebImageDownloader downloaderWithURL:url delegate:self userInfo:info lowPriority:(options & SDWebImageLowPriority)];
@@ -322,13 +338,13 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
         // Reuse shared downloader
         downloader.lowPriority = (options & SDWebImageLowPriority);
     }
-
+    
     if ((options & SDWebImageProgressiveDownload) && !downloader.progressive)
     {
         // Turn progressive download support on demand
         downloader.progressive = YES;
     }
-
+    
     [downloadInfo addObject:info];
     [downloadDelegates addObject:delegate];
     [downloaders addObject:downloader];
@@ -348,7 +364,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
             id<SDWebImageManagerDelegate> delegate = [downloadDelegates objectAtIndex:uidx];
             SDWIRetain(delegate);
             SDWIAutorelease(delegate);
-
+            
             if ([delegate respondsToSelector:@selector(webImageManager:didProgressWithPartialImage:forURL:)])
             {
                 objc_msgSend(delegate, @selector(webImageManager:didProgressWithPartialImage:forURL:), self, image, downloader.url);
@@ -366,17 +382,10 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     }
 }
 
-- (void)imageDownloader:(SDWebImageDownloader *)downloader didFinishWithImage:(UIImage *)image
+- (void)postProcessingImageDownloader:(SDWebImageDownloader *)downloader didFinishWithImage:(UIImage *)image
 {
     SDWIRetain(downloader);
     SDWebImageOptions options = [[downloader.userInfo objectForKey:@"options"] intValue];
-    
-    // added by smule:
-    // if we have set the circular image flag, we need to convert this image to a circle before proceeding
-    if ((options & SDWebImageCircleImageToCache))
-    {
-        image = [self createCircleImageFromImage:image];
-    }
     
     // Notify all the downloadDelegates with this downloader
     for (NSInteger idx = (NSInteger)[downloaders count] - 1; idx >= 0; idx--)
@@ -388,7 +397,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
             id<SDWebImageManagerDelegate> delegate = [downloadDelegates objectAtIndex:uidx];
             SDWIRetain(delegate);
             SDWIAutorelease(delegate);
-
+            
             if (image)
             {
                 if ([delegate respondsToSelector:@selector(webImageManager:didFinishWithImage:)])
@@ -443,26 +452,44 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
                 }
 #endif
             }
-
+            
             [downloaders removeObjectAtIndex:uidx];
             [downloadInfo removeObjectAtIndex:uidx];
             [downloadDelegates removeObjectAtIndex:uidx];
         }
     }
-
+    
     if (image)
     {
         // added by smule
-        NSString *cacheKey = [self cacheKeyForURL:downloader.url];
-        // append a different cache key if we're drawing a circle
+        // userInfo is stored in SDWebImageManager as an object under downloader's userInfo dictionary under key userInfo
+        NSDictionary *userInfo = [downloader.userInfo objectForKey:@"userInfo"];
+        
+        // it may be NSNull class, which will crash if attempted to access. this pattern for checking is used elsewhere in this class, so use it here
+        if ([userInfo isKindOfClass:NSNull.class])
+        {
+            userInfo = nil;
+        }
+        NSString *cacheKey = [self cacheKeyForURL:downloader.url withOptions:options userInfo:userInfo];
+        NSData *imageData = downloader.imageData;
+        
+        // if we have added roundness, we need to save as PNG to preserve alpha component
         if ((options & SDWebImageCircleImageToCache))
         {
-            cacheKey = [cacheKey stringByAppendingString:kCircleCacheKeyAddition];
+            imageData = UIImagePNGRepresentation(image);
+        }
+        // if we have not added roundness, but augmented size, we need ot save as JPEG
+        else if ( [userInfo objectForKey:kMaxImageSizeForCacheKey] )
+        {
+            //CGSize size = CGSizeFromString([userInfo objectForKey:kMaxImageSizeForCacheKey]);
+            // only perform if we are bigger than the desired size
+            //if ( image.size.width > size.width || image.size.height > size.width )
+            imageData = UIImageJPEGRepresentation(image, 0.7);
         }
         
         // Store the image in the cache
         [[SDImageCache sharedImageCache] storeImage:image
-                                          imageData:downloader.imageData
+                                          imageData:imageData
                                              forKey:cacheKey
                                              toDisk:!(options & SDWebImageCacheMemoryOnly)];
     }
@@ -472,17 +499,67 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
         // (do this only if SDWebImageRetryFailed isn't activated)
         [failedURLs addObject:downloader.url];
     }
-
-
+    
+    
     // Release the downloader
     [downloaderForURL removeObjectForKey:downloader.url];
     SDWIRelease(downloader);
+    
+}
+
+- (void)imageDownloader:(SDWebImageDownloader *)downloader didFinishWithImage:(UIImage *)image
+{
+    SDWebImageOptions options = [[downloader.userInfo objectForKey:@"options"] intValue];
+    
+    // hmm... not arc
+    SDWebImageManager *weakself = self;
+    
+    // added by smule: ---------------------------------------------------------------
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_HIGH, 0), ^{
+        
+        // if we have passed in an image size, we need to use it
+        
+        // userInfo is stored in SDWebImageManager as an object under downloader's userInfo dictionary under key userInfo
+        NSDictionary *userInfo = [downloader.userInfo objectForKey:@"userInfo"];
+        
+        // it may be NSNull class, which will crash if attempted to access. this pattern for checking is used elsewhere in this class, so use it here
+        if ([userInfo isKindOfClass:NSNull.class])
+        {
+            userInfo = nil;
+        }
+        
+        UIImage *newImage = nil;
+        
+        NSString *newSize = [userInfo objectForKey:kMaxImageSizeForCacheKey];
+        if ( newSize )
+        {
+            CGSize size = CGSizeFromString(newSize);
+            // only perform if we are bigger than the desired max size
+            //if ( image.size.width > size.width || image.size.height > size.height )
+            newImage = [self resizeImage:image toSize:size interpolationQuality:kCGInterpolationHigh];
+        }
+        
+        if (!newImage) {
+            newImage = image;
+        }
+        
+        // if we have set the circular image flag, we need to convert this image to a circle before proceeding
+        if ((options & SDWebImageCircleImageToCache))
+        {
+            newImage = [self createCircleImageFromImage:newImage];
+        }
+        // -------------------------------------------------------------------------------
+        
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [weakself postProcessingImageDownloader:downloader didFinishWithImage:newImage];
+        });
+    });
 }
 
 - (void)imageDownloader:(SDWebImageDownloader *)downloader didFailWithError:(NSError *)error;
 {
     SDWIRetain(downloader);
-
+    
     // Notify all the downloadDelegates with this downloader
     for (NSInteger idx = (NSInteger)[downloaders count] - 1; idx >= 0; idx--)
     {
@@ -493,7 +570,7 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
             id<SDWebImageManagerDelegate> delegate = [downloadDelegates objectAtIndex:uidx];
             SDWIRetain(delegate);
             SDWIAutorelease(delegate);
-
+            
             if ([delegate respondsToSelector:@selector(webImageManager:didFailWithError:)])
             {
                 [delegate performSelector:@selector(webImageManager:didFailWithError:) withObject:self withObject:error];
@@ -518,13 +595,13 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
                 failure(error);
             }
 #endif
-
+            
             [downloaders removeObjectAtIndex:uidx];
             [downloadInfo removeObjectAtIndex:uidx];
             [downloadDelegates removeObjectAtIndex:uidx];
         }
     }
-
+    
     // Release the downloader
     [downloaderForURL removeObjectForKey:downloader.url];
     SDWIRelease(downloader);
@@ -550,8 +627,45 @@ static NSString *kCircleCacheKeyAddition = @"-circle";
     [layer renderInContext:UIGraphicsGetCurrentContext()];
     
     UIImage *newImage = UIGraphicsGetImageFromCurrentImageContext();
-
+    
     UIGraphicsEndImageContext();
+    
+    return newImage;
+}
+
+- (UIImage *)resizeImage:(UIImage*)image
+                  toSize:(CGSize)newSize
+    interpolationQuality:(CGInterpolationQuality)quality {
+    
+    CGRect newRect = CGRectIntegral(CGRectMake(0, 0, newSize.width, newSize.height));
+    CGImageRef imageRef = image.CGImage;
+    //CGSize originalSize = image.size;
+    
+    // Build a context that's the same dimensions as the new size
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGContextRef bitmap = CGBitmapContextCreate(NULL,
+                                                (int)(newRect.size.width),
+                                                (int)(newRect.size.height),
+                                                8,
+                                                0,
+                                                space,
+                                                (CGBitmapInfo)kCGImageAlphaPremultipliedLast
+                                                );
+    CGColorSpaceRelease(space);
+    
+    // Set the quality level to use when rescaling
+    CGContextSetInterpolationQuality(bitmap, quality);
+    
+    // Draw into the context; this scales the image
+    CGContextDrawImage(bitmap, newRect, imageRef);
+    
+    // Get the resized image from the context and a UIImage
+    CGImageRef newImageRef = CGBitmapContextCreateImage(bitmap);
+    UIImage *newImage = [UIImage imageWithCGImage:newImageRef];
+    
+    // Clean up
+    CGContextRelease(bitmap);
+    CGImageRelease(newImageRef);
     
     return newImage;
 }
