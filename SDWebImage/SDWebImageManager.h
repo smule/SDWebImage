@@ -16,7 +16,12 @@ typedef enum
     SDWebImageRetryFailed = 1 << 0,
     SDWebImageLowPriority = 1 << 1,
     SDWebImageCacheMemoryOnly = 1 << 2,
-    SDWebImageProgressiveDownload = 1 << 3
+    SDWebImageProgressiveDownload = 1 << 3,
+    
+    // this is added by us at smule
+    // using this flag will write a circular image to cache,
+    // return a circular image, and store it under a different cache key as well
+    SDWebImageCircleImageToCache = 1 << 4
 } SDWebImageOptions;
 
 #if NS_BLOCKS_AVAILABLE

@@ -13,6 +13,9 @@
 
 static SDWebImageManager *instance;
 
+// added by smule
+static NSString *kCircleCacheKeyAddition = @"-circle";
+
 @implementation SDWebImageManager
 
 #if NS_BLOCKS_AVAILABLE
@@ -177,7 +180,16 @@ static SDWebImageManager *instance;
                           nil];
     SDWIRelease(successCopy);
     SDWIRelease(failureCopy);
-    [[SDImageCache sharedImageCache] queryDiskCacheForKey:[self cacheKeyForURL:url] delegate:self userInfo:info];
+    
+    // added by smule
+    NSString *cacheKey = [self cacheKeyForURL:url];
+    // append a different cache key if we're drawing a circle
+    if ((options & SDWebImageCircleImageToCache))
+    {
+        cacheKey = [cacheKey stringByAppendingString:kCircleCacheKeyAddition];
+    }
+    
+    [[SDImageCache sharedImageCache] queryDiskCacheForKey:cacheKey delegate:self userInfo:info];
 }
 #endif
 
@@ -358,7 +370,14 @@ static SDWebImageManager *instance;
 {
     SDWIRetain(downloader);
     SDWebImageOptions options = [[downloader.userInfo objectForKey:@"options"] intValue];
-
+    
+    // added by smule:
+    // if we have set the circular image flag, we need to convert this image to a circle before proceeding
+    if ((options & SDWebImageCircleImageToCache))
+    {
+        image = [self createCircleImageFromImage:image];
+    }
+    
     // Notify all the downloadDelegates with this downloader
     for (NSInteger idx = (NSInteger)[downloaders count] - 1; idx >= 0; idx--)
     {
@@ -433,10 +452,18 @@ static SDWebImageManager *instance;
 
     if (image)
     {
+        // added by smule
+        NSString *cacheKey = [self cacheKeyForURL:downloader.url];
+        // append a different cache key if we're drawing a circle
+        if ((options & SDWebImageCircleImageToCache))
+        {
+            cacheKey = [cacheKey stringByAppendingString:kCircleCacheKeyAddition];
+        }
+        
         // Store the image in the cache
         [[SDImageCache sharedImageCache] storeImage:image
                                           imageData:downloader.imageData
-                                             forKey:[self cacheKeyForURL:downloader.url]
+                                             forKey:cacheKey
                                              toDisk:!(options & SDWebImageCacheMemoryOnly)];
     }
     else if (!(options & SDWebImageRetryFailed))
@@ -501,6 +528,32 @@ static SDWebImageManager *instance;
     // Release the downloader
     [downloaderForURL removeObjectForKey:downloader.url];
     SDWIRelease(downloader);
+}
+
+#pragma mark - smule additions
+- (UIImage*)createCircleImageFromImage:(UIImage*)image
+{
+    // create a circlized image
+    BOOL isSquare = (image.size.height == image.size.width);
+    CGFloat d = MAX(image.size.height, image.size.width);
+    
+    UIGraphicsBeginImageContextWithOptions(CGSizeMake(d, d), NO, 0.0);
+    
+    CALayer *layer = [[CALayer alloc] init];
+    layer.frame = CGRectMake(0, 0, d, d);
+    layer.masksToBounds = YES;
+    layer.rasterizationScale = [[UIScreen mainScreen] scale];
+    layer.opaque = NO;
+    layer.cornerRadius = d/2.0;
+    layer.contents = (__bridge id)(image.CGImage);
+    layer.contentsGravity = isSquare ? kCAGravityResizeAspectFill : kCAGravityCenter;
+    [layer renderInContext:UIGraphicsGetCurrentContext()];
+    
+    UIImage *newImage = UIGraphicsGetImageFromCurrentImageContext();
+
+    UIGraphicsEndImageContext();
+    
+    return newImage;
 }
 
 @end
