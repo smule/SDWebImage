@@ -293,12 +293,19 @@
         else {
 
             UIImage *image = [UIImage sd_imageWithData:self.imageData];
-
-            image = [self scaledImageForKey:self.request.URL.absoluteString image:image];
-
-            if (!image.images) // Do not force decod animated GIFs
-            {
-                image = [UIImage decodedImageWithImage:image];
+            BOOL shouldProcessImage = YES;
+#if TARGET_OS_TV
+            // LCR images should not be scaled or decoded since they lose their 3D effect when doing so.
+            shouldProcessImage = ![[[self.request.URL pathExtension] lowercaseString] isEqual:@"lcr"];
+#endif
+            
+            if (shouldProcessImage) {
+                image = [self scaledImageForKey:self.request.URL.absoluteString image:image];
+                
+                if (!image.images) // Do not force decode animated GIFs
+                {
+                    image = [UIImage decodedImageWithImage:image];
+                }
             }
 
             if (CGSizeEqualToSize(image.size, CGSizeZero)) {
