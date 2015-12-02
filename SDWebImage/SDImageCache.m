@@ -254,8 +254,16 @@ BOOL ImageDataHasPNGPreffix(NSData *data) {
     NSData *data = [self diskImageDataBySearchingAllPathsForKey:key];
     if (data) {
         UIImage *image = [UIImage sd_imageWithData:data];
-        image = [self scaledImageForKey:key image:image];
-        image = [UIImage decodedImageWithImage:image];
+        BOOL shouldProcessImage = YES;
+#if TARGET_OS_TV
+        // LCR images should not be scaled or decoded since they lose their 3D effect when doing so.
+        shouldProcessImage = ![[[key pathExtension] lowercaseString] isEqual:@"lcr"];
+#endif
+        if(shouldProcessImage) {
+            image = [self scaledImageForKey:key image:image];
+            image = [UIImage decodedImageWithImage:image];
+        }
+        
         return image;
     }
     else {
