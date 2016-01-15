@@ -168,4 +168,9 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
  */
 - (BOOL)diskImageExistsWithKey:(NSString *)key;
 
+/**
+ Get the default cache path for a key.
+ */
+- (NSString *)defaultCachePathForKey:(NSString *)key;
+
 @end

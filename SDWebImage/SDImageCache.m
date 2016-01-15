@@ -123,10 +123,6 @@ BOOL ImageDataHasPNGPreffix(NSData *data) {
     return [path stringByAppendingPathComponent:filename];
 }
 
-- (NSString *)defaultCachePathForKey:(NSString *)key {
-    return [self cachePathForKey:key inPath:self.diskCachePath];
-}
-
 - (NSString *)cachedFileNameForKey:(NSString *)key {
     const char *str = [key UTF8String];
     if (str == NULL) {
@@ -141,6 +137,10 @@ BOOL ImageDataHasPNGPreffix(NSData *data) {
 }
 
 #pragma mark ImageCache
+
+- (NSString *)defaultCachePathForKey:(NSString *)key {
+    return [self cachePathForKey:key inPath:self.diskCachePath];
+}
 
 - (void)storeImage:(UIImage *)image recalculateFromImage:(BOOL)recalculate imageData:(NSData *)imageData forKey:(NSString *)key toDisk:(BOOL)toDisk {
     if (!image || !key) {
@@ -254,16 +254,8 @@ BOOL ImageDataHasPNGPreffix(NSData *data) {
     NSData *data = [self diskImageDataBySearchingAllPathsForKey:key];
     if (data) {
         UIImage *image = [UIImage sd_imageWithData:data];
-        BOOL shouldProcessImage = YES;
-#if TARGET_OS_TV
-        // LCR images should not be scaled or decoded since they lose their 3D effect when doing so.
-        shouldProcessImage = ![[[key pathExtension] lowercaseString] isEqual:@"lcr"];
-#endif
-        if(shouldProcessImage) {
-            image = [self scaledImageForKey:key image:image];
-            image = [UIImage decodedImageWithImage:image];
-        }
-        
+        image = [self scaledImageForKey:key image:image];
+        image = [UIImage decodedImageWithImage:image];
         return image;
     }
     else {

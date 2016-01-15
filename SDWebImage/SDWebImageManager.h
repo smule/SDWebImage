@@ -192,4 +192,12 @@ SDWebImageManager *manager = [SDWebImageManager sharedManager];
  */
 - (BOOL)diskImageExistsForURL:(NSURL *)url;
 
+/**
+ * Returns the default image cache disk path for an image URL.
+ * It returns a path even if we don't have an image cached yet.
+ * In this case, the path is the default path where we will cache
+ * the image once we download it.
+ */
+- (NSString *)defaultDiskPathForImageWithURL:(NSURL *)url;
+
 @end
