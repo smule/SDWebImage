@@ -24,6 +24,12 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
             SDImageCacheTypeMemory
 };
 
+typedef void(^SDWebImageQueryCompletedBlock)(UIImage *image, SDImageCacheType cacheType);
+
+typedef void(^SDWebImageCheckCacheCompletionBlock)(BOOL isInCache);
+
+typedef void(^SDWebImageCalculateSizeBlock)(NSUInteger fileCount, NSUInteger totalSize);
+
 /**
  * SDImageCache maintains a memory cache and an optional disk cache. Disk cache write operations are performed
  * asynchronous so it doesn’t add unnecessary latency to the UI.
@@ -31,9 +37,30 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
 @interface SDImageCache : NSObject
 
 /**
+ * Decompressing images that are downloaded and cached can improve performance but can consume lot of memory.
+ * Defaults to YES. Set this to NO if you are experiencing a crash due to excessive memory consumption.
+ */
+@property (assign, nonatomic) BOOL shouldDecompressImages;
+
+/**
+ *  disable iCloud backup [defaults to YES]
+ */
+@property (assign, nonatomic) BOOL shouldDisableiCloud;
+
+/**
+ * use memory cache [defaults to YES]
+ */
+@property (assign, nonatomic) BOOL shouldCacheImagesInMemory;
+
+/**
  * The maximum "total cost" of the in-memory image cache. The cost function is the number of pixels held in memory.
  */
 @property (assign, nonatomic) NSUInteger maxMemoryCost;
+
+/**
+ * The maximum number of objects the cache should hold.
+ */
+@property (assign, nonatomic) NSUInteger maxMemoryCountLimit;
 
 /**
  * The maximum length of time to keep an image in the cache, in seconds
@@ -58,6 +85,16 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
  * @param ns The namespace to use for this cache store
  */
 - (id)initWithNamespace:(NSString *)ns;
+
+/**
+ * Init a new cache store with a specific namespace and directory
+ *
+ * @param ns        The namespace to use for this cache store
+ * @param directory Directory to cache disk images in
+ */
+- (id)initWithNamespace:(NSString *)ns diskCacheDirectory:(NSString *)directory;
+
+-(NSString *)makeDiskCachePath:(NSString*)fullNamespace;
 
 /**
  * Add a read-only cache path to search for images pre-cached by SDImageCache
@@ -102,7 +139,7 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
  *
  * @param key The unique key used to store the wanted image
  */
-- (NSOperation *)queryDiskCacheForKey:(NSString *)key done:(void (^)(UIImage *image, SDImageCacheType cacheType))doneBlock;
+- (NSOperation *)queryDiskCacheForKey:(NSString *)key done:(SDWebImageQueryCompletedBlock)doneBlock;
 
 /**
  * Query the memory cache synchronously.
@@ -125,13 +162,31 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
  */
 - (void)removeImageForKey:(NSString *)key;
 
+
 /**
- * Remove the image from memory and optionaly disk cache synchronously
+ * Remove the image from memory and disk cache asynchronously
  *
  * @param key The unique image cache key
+ * @param completion      An block that should be executed after the image has been removed (optional)
+ */
+- (void)removeImageForKey:(NSString *)key withCompletion:(SDWebImageNoParamsBlock)completion;
+
+/**
+ * Remove the image from memory and optionally disk cache asynchronously
+ *
+ * @param key      The unique image cache key
  * @param fromDisk Also remove cache entry from disk if YES
  */
 - (void)removeImageForKey:(NSString *)key fromDisk:(BOOL)fromDisk;
+
+/**
+ * Remove the image from memory and optionally disk cache asynchronously
+ *
+ * @param key             The unique image cache key
+ * @param fromDisk        Also remove cache entry from disk if YES
+ * @param completion      An block that should be executed after the image has been removed (optional)
+ */
+- (void)removeImageForKey:(NSString *)key fromDisk:(BOOL)fromDisk withCompletion:(SDWebImageNoParamsBlock)completion;
 
 /**
  * Clear all memory cached images
@@ -139,12 +194,26 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
 - (void)clearMemory;
 
 /**
+ * Clear all disk cached images. Non-blocking method - returns immediately.
+ * @param completion    An block that should be executed after cache expiration completes (optional)
+ */
+- (void)clearDiskOnCompletion:(SDWebImageNoParamsBlock)completion;
+
+/**
  * Clear all disk cached images
+ * @see clearDiskOnCompletion:
  */
 - (void)clearDisk;
 
 /**
+ * Remove all expired cached image from disk. Non-blocking method - returns immediately.
+ * @param completionBlock An block that should be executed after cache expiration completes (optional)
+ */
+- (void)cleanDiskWithCompletionBlock:(SDWebImageNoParamsBlock)completionBlock;
+
+/**
  * Remove all expired cached image from disk
+ * @see cleanDiskWithCompletionBlock:
  */
 - (void)cleanDisk;
 
@@ -156,20 +225,47 @@ typedef NS_ENUM(NSInteger, SDImageCacheType) {
 /**
  * Get the number of images in the disk cache
  */
-- (int)getDiskCount;
+- (NSUInteger)getDiskCount;
 
 /**
  * Asynchronously calculate the disk cache's size.
  */
-- (void)calculateSizeWithCompletionBlock:(void (^)(NSUInteger fileCount, NSUInteger totalSize))completionBlock;
+- (void)calculateSizeWithCompletionBlock:(SDWebImageCalculateSizeBlock)completionBlock;
 
 /**
- * Check if image exists in cache already
+ *  Async check if image exists in disk cache already (does not load the image)
+ *
+ *  @param key             the key describing the url
+ *  @param completionBlock the block to be executed when the check is done.
+ *  @note the completion block will be always executed on the main queue
+ */
+- (void)diskImageExistsWithKey:(NSString *)key completion:(SDWebImageCheckCacheCompletionBlock)completionBlock;
+
+/**
+ *  Check if image exists in disk cache already (does not load the image)
+ *
+ *  @param key the key describing the url
+ *
+ *  @return YES if an image exists for the given key
  */
 - (BOOL)diskImageExistsWithKey:(NSString *)key;
 
 /**
- Get the default cache path for a key.
+ *  Get the cache path for a certain key (needs the cache path root folder)
+ *
+ *  @param key  the key (can be obtained from url using cacheKeyForURL)
+ *  @param path the cache path root folder
+ *
+ *  @return the cache path
+ */
+- (NSString *)cachePathForKey:(NSString *)key inPath:(NSString *)path;
+
+/**
+ *  Get the default cache path for a certain key
+ *
+ *  @param key the key (can be obtained from url using cacheKeyForURL)
+ *
+ *  @return the default cache path
  */
 - (NSString *)defaultCachePathForKey:(NSString *)key;
 
